@@ -1,18 +1,32 @@
 package utils
 
 import (
+	"crypto/rand"
 	"fmt"
-	"math/rand"
+	"math/big"
+	mrand "math/rand"
 	"regexp"
 	"strings"
-	"time"
 )
+
+// GenerateOTP creates a cryptographically secure 6-digit numeric code
+func GenerateOTP() (string, error) {
+	const length = 6
+	const digits = "0123456789"
+	otp := make([]byte, length)
+	for i := 0; i < length; i++ {
+		num, err := rand.Int(rand.Reader, big.NewInt(int64(len(digits))))
+		if err != nil {
+			return "", err
+		}
+		otp[i] = digits[num.Int64()]
+	}
+	return string(otp), nil
+}
 
 // GenerateUsername creates a unique username based on the user's full name
 // It converts the name to lowercase, removes spaces, and appends a random 4-digit number
 func GenerateUsername(fullName string) string {
-	// Initialize random seed
-	rand.Seed(time.Now().UnixNano())
 
 	// Clean the name: lowercase and remove non-alphanumeric characters
 	reg, _ := regexp.Compile("[^a-zA-Z0-9]+")
@@ -30,7 +44,7 @@ func GenerateUsername(fullName string) string {
 	}
 
 	// Generate a 4-digit random number
-	randomSuffix := rand.Intn(9000) + 1000
+	randomSuffix := mrand.Intn(9000) + 1000
 
 	return fmt.Sprintf("%s%d", cleanName, randomSuffix)
 }

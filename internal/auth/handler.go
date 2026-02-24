@@ -30,8 +30,16 @@ func (h *Handler) SignUp(c *gin.Context) {
 		return
 	}
 
+	//generate otp and create new row in otp table
+	_, otpErr := h.svc.CreateOTP(c.Request.Context(), user.ID)
+	if otpErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create otp"})
+		slog.Error("failed to create otp", "error", otpErr)
+		return
+	}
+
 	c.JSON(http.StatusCreated, gin.H{
-		"message": "user created successfully",
+		"message": "user created successfully, otp sent to your email",
 		"data":    user,
 	})
 }

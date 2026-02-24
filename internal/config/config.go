@@ -12,6 +12,7 @@ type Config struct {
 	Port             string
 	JWTAccessSecret  string
 	JWTRefreshSecret string
+	RedisAddr        string
 }
 
 func LoadConfig() (*Config, error) {
@@ -36,6 +37,11 @@ func LoadConfig() (*Config, error) {
 	}
 
 	cfg.JWTRefreshSecret, err = getEnv("JWT_REFRESH_SECRET")
+	if err != nil {
+		return nil, err
+	}
+
+	cfg.RedisAddr, err = getEnv("REDIS_ADDR")
 	if err != nil {
 		return nil, err
 	}

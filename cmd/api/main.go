@@ -8,6 +8,7 @@ import (
 	"github.com/luponetn/paycore/internal/auth"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/internal/tasks"
 )
 
 type Application struct {
@@ -45,8 +46,12 @@ func main() {
 	router := app.SetupRouter()
 	queries := db.New(dbConn)
 
+	//setup task client
+	taskClient := tasks.NewTaskClient(cfg.RedisAddr)
+	defer taskClient.Close()
+
 	//register service
-	authSvc := auth.NewService(queries, cfg)
+	authSvc := auth.NewService(queries, cfg, taskClient)
 
 	//register handler
 	authHandler := auth.NewHandler(authSvc)

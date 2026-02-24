@@ -35,3 +35,16 @@ type LoginResponse struct {
 	AccessToken  string       `json:"access_token"`
 	RefreshToken string       `json:"refresh_token"`
 }
+
+type CreateOTPRequest struct {
+	UserID uuid.UUID `json:"user_id"`
+}
+
+type OTPResponse struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Code      string             `json:"code"`
+	Purpose   string             `json:"purpose"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Used      pgtype.Bool        `json:"used"`
+}

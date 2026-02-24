@@ -3,24 +3,31 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"time"
 
+	"github.com/jackc/pgx/v5/pgtype"
+
+	"github.com/google/uuid"
+	"github.com/hibiken/asynq"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
 	"github.com/luponetn/paycore/pkg/utils"
 )
 
 type Svc struct {
-	queries *db.Queries
-	cfg     *config.Config
+	queries    *db.Queries
+	cfg        *config.Config
+	taskClient *asynq.Client
 }
 
 type Service interface {
 	SignUp(ctx context.Context, req SignUpRequest) (UserResponse, error)
 	Login(ctx context.Context, req LoginRequest) (LoginResponse, error)
+	CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error)
 }
 
-func NewService(queries *db.Queries, cfg *config.Config) Service {
-	return &Svc{queries: queries, cfg: cfg}
+func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Client) Service {
+	return &Svc{queries: queries, cfg: cfg, taskClient: taskClient}
 }
 
 // SignUp handles the business logic for user registration
@@ -104,4 +111,44 @@ func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+// createOtp handles the creation of otp in the database
+func (s *Svc) CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error) {
+	otp, err := utils.GenerateOTP()
+	if err != nil {
+		slog.Error("failed to generate otp", "error", err)
+		return OTPResponse{}, err
+	}
+
+	expiresAt := time.Now().Add(time.Minute * 10)
+	payload := db.CreateOTPParams{
+		UserID:  userID,
+		Code:    otp,
+		Purpose: "verification",
+		ExpiresAt: pgtype.Timestamptz{
+			Time:  expiresAt,
+			Valid: true,
+		},
+		Used: pgtype.Bool{
+			Bool:  false,
+			Valid: true,
+		},
+	}
+
+	otpRecord, err := s.queries.CreateOTP(ctx, payload)
+	if err != nil {
+		slog.Error("failed to create otp", "error", err)
+		return OTPResponse{}, err
+	}
+
+	return OTPResponse{
+		ID:        otpRecord.ID,
+		UserID:    otpRecord.UserID,
+		Code:      otpRecord.Code,
+		Purpose:   otpRecord.Purpose,
+		ExpiresAt: otpRecord.ExpiresAt,
+		Used:      otpRecord.Used,
+	}, nil
+
 }

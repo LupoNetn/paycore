@@ -153,6 +153,16 @@ type Ledger struct {
 	Type             TransactionTypeEnum   `json:"type"`
 }
 
+type Otp struct {
+	ID        uuid.UUID          `json:"id"`
+	UserID    uuid.UUID          `json:"user_id"`
+	Code      string             `json:"code"`
+	Purpose   string             `json:"purpose"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	Used      pgtype.Bool        `json:"used"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
 type User struct {
 	ID           uuid.UUID          `json:"id"`
 	FullName     string             `json:"full_name"`
