@@ -9,13 +9,13 @@ import (
 	"github.com/luponetn/paycore/internal/config"
 )
 
-func ConnDb(cfg *config.Config, logger *slog.Logger) (*pgxpool.Pool, error) {
+func ConnDb(cfg *config.Config) (*pgxpool.Pool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	config, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
-		logger.Error("failed to parse database config ", "error", err)
+		slog.Error("failed to parse database config ", "error", err)
 		return nil, err
 	}
 
@@ -26,7 +26,7 @@ func ConnDb(cfg *config.Config, logger *slog.Logger) (*pgxpool.Pool, error) {
 
 	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
-		logger.Error("failed to create database pool", "error", err)
+		slog.Error("failed to create database pool", "error", err)
 		return nil, err
 	}
 
