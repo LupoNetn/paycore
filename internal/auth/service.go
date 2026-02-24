@@ -3,11 +3,12 @@ package auth
 import (
 	"context"
 	"log/slog"
-	"time"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	// "time"
 
-	"github.com/google/uuid"
+	// "github.com/jackc/pgx/v5/pgtype"
+
+	// "github.com/google/uuid"
 	"github.com/hibiken/asynq"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
@@ -23,7 +24,8 @@ type Svc struct {
 type Service interface {
 	SignUp(ctx context.Context, req SignUpRequest) (UserResponse, error)
 	Login(ctx context.Context, req LoginRequest) (LoginResponse, error)
-	CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error)
+	Refresh(ctx context.Context, req RefreshRequest) (RefreshResponse, error)
+	//CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error)
 }
 
 func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Client) Service {
@@ -113,42 +115,67 @@ func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error
 	}, nil
 }
 
-// createOtp handles the creation of otp in the database
-func (s *Svc) CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error) {
-	otp, err := utils.GenerateOTP()
+// refres token endpoint
+func (s *Svc) Refresh(ctx context.Context, req RefreshRequest) (RefreshResponse, error) {
+	claims, err := utils.VerifyToken(req.RefreshToken, s.cfg.JWTRefreshSecret)
 	if err != nil {
-		slog.Error("failed to generate otp", "error", err)
-		return OTPResponse{}, err
+		slog.Error("could not verify refresh token for user", "error", err)
+		return RefreshResponse{}, err
 	}
 
-	expiresAt := time.Now().Add(time.Minute * 10)
-	payload := db.CreateOTPParams{
-		UserID:  userID,
-		Code:    otp,
-		Purpose: "verification",
-		ExpiresAt: pgtype.Timestamptz{
-			Time:  expiresAt,
-			Valid: true,
-		},
-		Used: pgtype.Bool{
-			Bool:  false,
-			Valid: true,
-		},
+	newAccessToken, accessErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTAccessSecret, "access")
+	if accessErr != nil {
+		slog.Error("could not generate new access token for refresh service", "error", accessErr)
+		return RefreshResponse{}, accessErr
+	}
+	newRefreshToken, refreshErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTRefreshSecret, "refresh")
+	if refreshErr != nil {
+		slog.Error("could not generate new refresh token for refresh service", "error", refreshErr)
+		return RefreshResponse{}, accessErr
 	}
 
-	otpRecord, err := s.queries.CreateOTP(ctx, payload)
-	if err != nil {
-		slog.Error("failed to create otp", "error", err)
-		return OTPResponse{}, err
-	}
-
-	return OTPResponse{
-		ID:        otpRecord.ID,
-		UserID:    otpRecord.UserID,
-		Code:      otpRecord.Code,
-		Purpose:   otpRecord.Purpose,
-		ExpiresAt: otpRecord.ExpiresAt,
-		Used:      otpRecord.Used,
+	return RefreshResponse{
+		AccessToken:  newAccessToken,
+		RefreshToken: newRefreshToken,
 	}, nil
-
 }
+
+// createOtp handles the creation of otp in the database
+// func (s *Svc) CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error) {
+// 	otp, err := utils.GenerateOTP()
+// 	if err != nil {
+// 		slog.Error("failed to generate otp", "error", err)
+// 		return OTPResponse{}, err
+// 	}
+
+// 	expiresAt := time.Now().Add(time.Minute * 10)
+// 	payload := db.CreateOTPParams{
+// 		UserID:  userID,
+// 		Code:    otp,
+// 		Purpose: "verification",
+// 		ExpiresAt: pgtype.Timestamptz{
+// 			Time:  expiresAt,
+// 			Valid: true,
+// 		},
+// 		Used: pgtype.Bool{
+// 			Bool:  false,
+// 			Valid: true,
+// 		},
+// 	}
+
+// 	otpRecord, err := s.queries.CreateOTP(ctx, payload)
+// 	if err != nil {
+// 		slog.Error("failed to create otp", "error", err)
+// 		return OTPResponse{}, err
+// 	}
+
+// 	return OTPResponse{
+// 		ID:        otpRecord.ID,
+// 		UserID:    otpRecord.UserID,
+// 		Code:      otpRecord.Code,
+// 		Purpose:   otpRecord.Purpose,
+// 		ExpiresAt: otpRecord.ExpiresAt,
+// 		Used:      otpRecord.Used,
+// 	}, nil
+
+// }

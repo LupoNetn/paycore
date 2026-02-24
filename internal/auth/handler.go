@@ -30,14 +30,6 @@ func (h *Handler) SignUp(c *gin.Context) {
 		return
 	}
 
-	//generate otp and create new row in otp table
-	_, otpErr := h.svc.CreateOTP(c.Request.Context(), user.ID)
-	if otpErr != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to create otp"})
-		slog.Error("failed to create otp", "error", otpErr)
-		return
-	}
-
 	c.JSON(http.StatusCreated, gin.H{
 		"message": "user created successfully, otp sent to your email",
 		"data":    user,
@@ -62,5 +54,29 @@ func (h *Handler) Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "user logged in successfully",
 		"data":    loginResponse,
+	})
+}
+
+func (h *Handler) Refresh(c *gin.Context) {
+	var req RefreshRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		slog.Error("could not bind json for refresh request")
+		c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+			"message": "invalid request",
+		})
+	}
+
+	newTokens, err := h.svc.Refresh(c.Request.Context(), req)
+	if err != nil {
+		slog.Error("unable to generate refresh token response", "error", err)
+		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+			"message": "Something went wrong with the server",
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":      "new tokens generated successfully",
+		"accessToken":  newTokens.AccessToken,
+		"refreshToken": newTokens.RefreshToken,
 	})
 }

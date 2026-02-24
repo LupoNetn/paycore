@@ -48,3 +48,12 @@ type OTPResponse struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	Used      pgtype.Bool        `json:"used"`
 }
+
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token"`
+}
+
+type RefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+}
