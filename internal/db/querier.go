@@ -13,6 +13,7 @@ import (
 type Querier interface {
 	CreateOTP(ctx context.Context, arg CreateOTPParams) (Otp, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) error
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)

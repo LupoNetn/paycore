@@ -12,6 +12,48 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type LedgerEntryType string
+
+const (
+	LedgerEntryTypeDebit  LedgerEntryType = "debit"
+	LedgerEntryTypeCredit LedgerEntryType = "credit"
+)
+
+func (e *LedgerEntryType) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = LedgerEntryType(s)
+	case string:
+		*e = LedgerEntryType(s)
+	default:
+		return fmt.Errorf("unsupported scan type for LedgerEntryType: %T", src)
+	}
+	return nil
+}
+
+type NullLedgerEntryType struct {
+	LedgerEntryType LedgerEntryType `json:"ledger_entry_type"`
+	Valid           bool            `json:"valid"` // Valid is true if LedgerEntryType is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullLedgerEntryType) Scan(value interface{}) error {
+	if value == nil {
+		ns.LedgerEntryType, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.LedgerEntryType.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullLedgerEntryType) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.LedgerEntryType), nil
+}
+
 type TransactionStatusEnum string
 
 const (
@@ -142,15 +184,15 @@ func (ns NullWalletTypeEnum) Value() (driver.Value, error) {
 }
 
 type Ledger struct {
-	ID               uuid.UUID             `json:"id"`
-	SenderWalletID   pgtype.UUID           `json:"sender_wallet_id"`
-	ReceiverWalletID pgtype.UUID           `json:"receiver_wallet_id"`
-	Amount           pgtype.Numeric        `json:"amount"`
-	Reference        pgtype.Text           `json:"reference"`
-	ReferenceID      pgtype.UUID           `json:"reference_id"`
-	CreatedAt        pgtype.Timestamptz    `json:"created_at"`
-	Status           TransactionStatusEnum `json:"status"`
-	Type             TransactionTypeEnum   `json:"type"`
+	ID            uuid.UUID          `json:"id"`
+	WalletID      uuid.UUID          `json:"wallet_id"`
+	TransactionID uuid.UUID          `json:"transaction_id"`
+	Amount        pgtype.Numeric     `json:"amount"`
+	EntryType     LedgerEntryType    `json:"entry_type"`
+	Currency      string             `json:"currency"`
+	BalanceBefore pgtype.Numeric     `json:"balance_before"`
+	BalanceAfter  pgtype.Numeric     `json:"balance_after"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
 }
 
 type Otp struct {
@@ -161,6 +203,20 @@ type Otp struct {
 	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
 	Used      pgtype.Bool        `json:"used"`
 	CreatedAt pgtype.Timestamptz `json:"created_at"`
+}
+
+type Transaction struct {
+	ID               uuid.UUID             `json:"id"`
+	SenderWalletID   pgtype.UUID           `json:"sender_wallet_id"`
+	ReceiverWalletID pgtype.UUID           `json:"receiver_wallet_id"`
+	TransactionType  TransactionTypeEnum   `json:"transaction_type"`
+	Amount           pgtype.Numeric        `json:"amount"`
+	Description      pgtype.Text           `json:"description"`
+	Status           TransactionStatusEnum `json:"status"`
+	Currency         string                `json:"currency"`
+	IdempotencyKey   string                `json:"idempotency_key"`
+	CreatedAt        pgtype.Timestamptz    `json:"created_at"`
+	UpdatedAt        pgtype.Timestamptz    `json:"updated_at"`
 }
 
 type User struct {
@@ -183,4 +239,5 @@ type Wallet struct {
 	CreatedAt  pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
 	WalletType WalletTypeEnum     `json:"wallet_type"`
+	Currency   string             `json:"currency"`
 }

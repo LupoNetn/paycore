@@ -51,7 +51,7 @@ func main() {
 	defer taskClient.Close()
 
 	//register service
-	authSvc := auth.NewService(queries, cfg, taskClient)
+	authSvc := auth.NewService(queries, cfg, taskClient, dbConn)
 
 	//register handler
 	authHandler := auth.NewHandler(authSvc)

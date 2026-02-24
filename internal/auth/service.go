@@ -10,12 +10,14 @@ import (
 
 	// "github.com/google/uuid"
 	"github.com/hibiken/asynq"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
 	"github.com/luponetn/paycore/pkg/utils"
 )
 
 type Svc struct {
+	db         *pgxpool.Pool
 	queries    *db.Queries
 	cfg        *config.Config
 	taskClient *asynq.Client
@@ -28,8 +30,8 @@ type Service interface {
 	//CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error)
 }
 
-func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Client) Service {
-	return &Svc{queries: queries, cfg: cfg, taskClient: taskClient}
+func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Client, db *pgxpool.Pool) Service {
+	return &Svc{db: db, queries: queries, cfg: cfg, taskClient: taskClient}
 }
 
 // SignUp handles the business logic for user registration
@@ -57,8 +59,40 @@ func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, erro
 		Nationality:  req.Nationality,
 	}
 
-	user, err := s.queries.CreateUser(ctx, arg)
+	tx, err := s.db.Begin(ctx)
 	if err != nil {
+		return UserResponse{}, err
+	}
+	defer tx.Rollback(ctx)
+
+	qtx := s.queries.WithTx(tx)
+
+	user, err := qtx.CreateUser(ctx, arg)
+	if err != nil {
+		return UserResponse{}, err
+	}
+
+	//TODO: create wallet for the user
+	walletTypes := []db.WalletTypeEnum{
+		db.WalletTypeEnumSavings,
+		db.WalletTypeEnumFixed,
+		db.WalletTypeEnumMisc,
+	}
+
+	for _, value := range walletTypes {
+		_, err := qtx.CreateWallet(ctx, db.CreateWalletParams{
+			UserID:     utils.ToPgUUID(user.ID),
+			WalletType: db.WalletTypeEnum(value),
+			Currency:   "NGN",
+		})
+
+		if err != nil {
+			slog.Error("could not create wallets for user", "error", err)
+			return UserResponse{}, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
 		return UserResponse{}, err
 	}
 
