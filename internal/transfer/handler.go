@@ -10,6 +10,6 @@ func NewHandler(svc Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-func (h *Handler) CreateTransaction(c *gin.Context) {
+func (h *Handler) HandleCreateTransaction(c *gin.Context) {
 
 }

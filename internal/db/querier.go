@@ -8,16 +8,25 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
 	CreateOTP(ctx context.Context, arg CreateOTPParams) (Otp, error)
+	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	CreateWallet(ctx context.Context, arg CreateWalletParams) (Wallet, error)
 	DeleteUser(ctx context.Context, id uuid.UUID) error
+	GetPendingTransactionsByWalletId(ctx context.Context, senderWalletID pgtype.UUID) ([]Transaction, error)
+	GetTransactionById(ctx context.Context, id uuid.UUID) (Transaction, error)
+	GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (Transaction, error)
+	GetTransactionsByWalletId(ctx context.Context, arg GetTransactionsByWalletIdParams) ([]Transaction, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetWalletById(ctx context.Context, id uuid.UUID) (Wallet, error)
+	GetWalletsAndLockByWalletIds(ctx context.Context, arg GetWalletsAndLockByWalletIdsParams) ([]GetWalletsAndLockByWalletIdsRow, error)
+	UpdateTransactionStatus(ctx context.Context, arg UpdateTransactionStatusParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 }
 

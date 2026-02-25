@@ -230,6 +230,7 @@ type User struct {
 	Nationality  string             `json:"nationality"`
 	CreatedAt    pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt    pgtype.Timestamptz `json:"updated_at"`
+	CountryCode  string             `json:"country_code"`
 }
 
 type Wallet struct {

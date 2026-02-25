@@ -24,7 +24,7 @@ INSERT INTO users (
 ) VALUES (
     $1, $2, $3, $4, $5, $6, $7
 )
-RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at
+RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code
 `
 
 type CreateUserParams struct {
@@ -59,6 +59,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Nationality,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -74,7 +75,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at FROM users
+SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code FROM users
 WHERE email = $1 LIMIT 1
 `
 
@@ -92,12 +93,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.Nationality,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CountryCode,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at FROM users
+SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code FROM users
 WHERE id = $1 LIMIT 1
 `
 
@@ -115,12 +117,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.Nationality,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CountryCode,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at FROM users
+SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code FROM users
 WHERE username = $1 LIMIT 1
 `
 
@@ -138,6 +141,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Nationality,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CountryCode,
 	)
 	return i, err
 }
@@ -154,7 +158,7 @@ SET
     nationality = COALESCE($7, nationality),
     updated_at = NOW()
 WHERE id = $8
-RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at
+RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code
 `
 
 type UpdateUserParams struct {
@@ -191,6 +195,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		&i.Nationality,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.CountryCode,
 	)
 	return i, err
 }

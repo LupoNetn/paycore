@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -39,4 +40,62 @@ func (q *Queries) CreateWallet(ctx context.Context, arg CreateWalletParams) (Wal
 		&i.Currency,
 	)
 	return i, err
+}
+
+const getWalletById = `-- name: GetWalletById :one
+SELECT id, user_id, balance, created_at, updated_at, wallet_type, currency FROM wallets WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) GetWalletById(ctx context.Context, id uuid.UUID) (Wallet, error) {
+	row := q.db.QueryRow(ctx, getWalletById, id)
+	var i Wallet
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Balance,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.WalletType,
+		&i.Currency,
+	)
+	return i, err
+}
+
+const getWalletsAndLockByWalletIds = `-- name: GetWalletsAndLockByWalletIds :many
+SELECT id, balance, currency
+FROM wallets
+WHERE id IN ($1, $2)
+ORDER BY id
+FOR UPDATE
+`
+
+type GetWalletsAndLockByWalletIdsParams struct {
+	ID   uuid.UUID `json:"id"`
+	ID_2 uuid.UUID `json:"id_2"`
+}
+
+type GetWalletsAndLockByWalletIdsRow struct {
+	ID       uuid.UUID      `json:"id"`
+	Balance  pgtype.Numeric `json:"balance"`
+	Currency string         `json:"currency"`
+}
+
+func (q *Queries) GetWalletsAndLockByWalletIds(ctx context.Context, arg GetWalletsAndLockByWalletIdsParams) ([]GetWalletsAndLockByWalletIdsRow, error) {
+	rows, err := q.db.Query(ctx, getWalletsAndLockByWalletIds, arg.ID, arg.ID_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetWalletsAndLockByWalletIdsRow
+	for rows.Next() {
+		var i GetWalletsAndLockByWalletIdsRow
+		if err := rows.Scan(&i.ID, &i.Balance, &i.Currency); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
