@@ -12,6 +12,7 @@ import (
 )
 
 type Querier interface {
+	CreateLedger(ctx context.Context, arg CreateLedgerParams) (Ledger, error)
 	CreateOTP(ctx context.Context, arg CreateOTPParams) (Otp, error)
 	CreateTransaction(ctx context.Context, arg CreateTransactionParams) (Transaction, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
@@ -21,6 +22,7 @@ type Querier interface {
 	GetTransactionById(ctx context.Context, id uuid.UUID) (Transaction, error)
 	GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (Transaction, error)
 	GetTransactionsByWalletId(ctx context.Context, arg GetTransactionsByWalletIdParams) ([]Transaction, error)
+	GetUserBalance(ctx context.Context, walletID uuid.UUID) (interface{}, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
@@ -28,6 +30,7 @@ type Querier interface {
 	GetWalletsAndLockByWalletIds(ctx context.Context, arg GetWalletsAndLockByWalletIdsParams) ([]GetWalletsAndLockByWalletIdsRow, error)
 	UpdateTransactionStatus(ctx context.Context, arg UpdateTransactionStatusParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
+	UpdateWalletBalance(ctx context.Context, arg UpdateWalletBalanceParams) error
 }
 
 var _ Querier = (*Queries)(nil)

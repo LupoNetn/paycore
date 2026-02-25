@@ -99,3 +99,19 @@ func (q *Queries) GetWalletsAndLockByWalletIds(ctx context.Context, arg GetWalle
 	}
 	return items, nil
 }
+
+const updateWalletBalance = `-- name: UpdateWalletBalance :exec
+UPDATE wallets
+SET balance = $1
+WHERE id = $2
+`
+
+type UpdateWalletBalanceParams struct {
+	Balance pgtype.Numeric `json:"balance"`
+	ID      uuid.UUID      `json:"id"`
+}
+
+func (q *Queries) UpdateWalletBalance(ctx context.Context, arg UpdateWalletBalanceParams) error {
+	_, err := q.db.Exec(ctx, updateWalletBalance, arg.Balance, arg.ID)
+	return err
+}

@@ -15,3 +15,8 @@ FROM wallets
 WHERE id IN ($1, $2)
 ORDER BY id
 FOR UPDATE;
+
+-- name: UpdateWalletBalance :exec
+UPDATE wallets
+SET balance = $1
+WHERE id = $2;
