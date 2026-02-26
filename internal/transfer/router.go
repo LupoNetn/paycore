@@ -12,5 +12,7 @@ func RegisterRoutes(r *gin.Engine, h *Handler) {
 	transferGroup.Use(middleware.AuthMiddleware())
 
 	//implement routes
-	transferGroup.POST("/", h.HandleCreateTransaction)
+	{
+		transferGroup.POST("/", h.HandleCreateTransaction)
+	}
 }

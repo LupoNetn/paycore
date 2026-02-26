@@ -6,13 +6,13 @@ import (
 )
 
 type CreateTransactionRequest struct {
-    SenderWalletID   pgtype.UUID           `json:"sender_wallet_id"`
-    ReceiverWalletID pgtype.UUID           `json:"receiver_wallet_id"`
-    TransactionType  db.TransactionTypeEnum   `json:"transaction_type"`
-    Amount           pgtype.Numeric        `json:"amount"`
+    SenderWalletID   pgtype.UUID           `json:"sender_wallet_id" binding:"required"`
+    ReceiverWalletID pgtype.UUID           `json:"receiver_wallet_id" binding:"required"`
+    TransactionType  db.TransactionTypeEnum   `json:"transaction_type" binding:"required"`
+    Amount           pgtype.Numeric        `json:"amount" binding:"required"`
     Description      pgtype.Text           `json:"description"`
     Status           db.TransactionStatusEnum `json:"status"`
-    Currency         string                `json:"currency"`
-    IdempotencyKey   string                `json:"idempotency_key"`
+    Currency         string                `json:"currency" binding:"required"`
+    IdempotencyKey   string                `json:"idempotency_key" binding:"required"`
 }
 

@@ -1,116 +1,169 @@
-# Paycore — Work remaining & roadmap (manager summary)
+## Paycore — Architecture review, MVP roadmap, and advanced roadmap
 
-Project: simulated fintech backend (wallets, transfers, double-entry ledger).  
-Current focal file inspected: internal/transfer/service.go — transfer flow scaffolded but incomplete and has correctness issues.
+Project: simulated fintech backend (wallets, transfers, double-entry ledger).
 
----
+This document is a manager-level, actionable roadmap to get the project to a secure
+and testable MVP, plus a prioritized list of production/advanced improvements.
 
-## High-level objective (MVP)
-- Atomic transfers between wallets with:
-  - row-level locking (no double spend)
-  - idempotency
-  - double-entry ledger (immutable debit/credit)
-  - cached wallet balances kept consistent with ledger
-  - full DB transaction (commit/rollback)
-  - tests and deadlock handling
+**Goals:**
+- Deliver a safe, atomic transfer API that preserves double-entry ledger invariants.
+- Provide deterministic behavior under concurrency (idempotency, no double-spend).
+- Ship with tests, observability, safety guards and an operational playbook.
 
 ---
 
-## Immediate correctness issues (found / likely)
-- Unreachable / incorrect error handling around idempotency lookup:
-  - returning nil error on tx begin failure and other wrong returns.
-  - generic err checks instead of distinguishing "not found" vs real error.
-- Missing tx.Rollback on error paths and missing tx.Commit on success.
-- No creation of transaction record (pending/completed), no ledger entries.
-- No wallet balance updates; balance comparisons may be using wrong types (decimal handling).
-- No prevention of self-transfers, negative amounts or zero-amount transfers.
-- No unique constraint handling for idempotency key (race conditions possible).
-- No explicit error return when insufficient balance — function continues.
-- No proper deadlock/lock-order safeguards beyond ordering by ID but not handling equal IDs or same wallet.
-- No tests (unit/integration) for transfer correctness or concurrency.
+**MVP success criteria (concrete)**
+- API: `POST /transfer` that performs a wallet-to-wallet transfer and returns a transaction.
+- Atomic: the transfer creates a transaction record, two ledger rows (debit/credit), and
+  updates both wallet balances inside a single DB transaction or returns the existing
+  transaction when the same idempotency key is used.
+- Safety: no double-spend under concurrent requests; idempotency is enforced.
+- Tests: unit + integration tests that prove correctness (including concurrent cases).
 
 ---
 
-## What needs to be implemented for MVP (priority order)
+**MVP feature checklist (ordered by priority)**
 
-High
-- Implement full CreateTransaction flow in internal/transfer/service.go:
-  - validate request (positive amount, different wallets, currency)
-  - idempotency lookup: return cached transaction if found; if not found continue
-  - begin DB tx, ensure defer tx.Rollback(ctx) unless committed
-  - SELECT ... FOR UPDATE both wallets in deterministic order (by wallet ID)
-  - check sender balance using decimal.Compare and prevent negatives
-  - create transaction row with status = pending
-  - insert two ledger rows (debit for sender, credit for receiver) with balance_before/after
-  - update wallet balances atomically
-  - update transaction status = completed
-  - commit tx
-- Ensure idempotency key unique constraint in DB and handle conflicts gracefully.
+- **Core transfer flow (P0)**: implement end-to-end in `internal/transfer/service.go`.
+  - **Validate input**: positive amount, non-empty idempotency key, different wallets, matching currency.
+  - **Lightweight DTO in handler**: handler accepts simple JSON types (string/decimal), validate, then map to `pgtype`.
+  - **Start TX + safe rollback**: begin TX and immediately `defer` a rollback that ignores ErrTxClosed; commit at end.
+  - **Deterministic locking**: SELECT wallets FOR UPDATE in deterministic order (min(id), max(id)).
+  - **Balance checks**: use `shopspring/decimal` and `pgtype.Numeric` conversions; return `ErrInsufficientFunds` on shortfall.
+  - **Create transaction row**: status `pending`, store `idempotency_key`.
+  - **Create ledger rows**: debit (sender) and credit (receiver) with `balance_before` / `balance_after`.
+  - **Update wallet balances**: atomic updates inside same TX.
+  - **Finalize transaction**: update status `completed` and commit.
 
-Medium
-- Add integration tests that run against a test Postgres instance using real migrations.
-- Add unit tests for service logic (mock queries).
-- Implement retry/backoff for serialization failures / deadlocks (exponential backoff).
+- **Idempotency (P0)**
+  - Add DB unique constraint on `transactions(idempotency_key)` (migration added).
+  - Pattern: attempt insert → if unique_violation (23505) then fetch transaction by idempotency key and return it.
+  - Do not perform a pre-check outside TX to avoid race conditions.
 
-Low
-- Currency validation and multi-currency routing (MVP can restrict to single currency).
-- Webhook/event emitters after successful transaction.
+- **Domain errors and mapping (P0)**
+  - Use typed errors in service: `ErrInsufficientFunds`, `ErrSameWallet`, `ErrCurrencyMismatch`, `ErrInvalidAmount`.
+  - Handler maps these to appropriate HTTP codes: 400/409/422 instead of 500.
 
----
-
-## Safety & data integrity checklist
-- Use accurate decimal arithmetic (shopspring/decimal everywhere).
-- Use DB-level constraint to prevent negative wallet balances.
-- Use unique index on transactions(idempotency_key).
-- Always use tx.Rollback on early returns.
-- Log and handle transient DB errors (retry on serialization errors).
-- Enforce immutable ledger rows (application + DB policy).
+- **Testing (P0/P1)**
+  - Unit tests for service logic with mocked `db.Queries`.
+  - Integration test using ephemeral Postgres (testcontainers) exercising full flow.
+  - Concurrency test: spawn many goroutines issuing the same idempotency key and different keys to assert no double ledger entries.
 
 ---
 
-## Tests to add
-- Concurrent transfers between same wallets to validate no double-spend.
-- Idempotency test: same idempotency_key twice returns same transaction, no double ledger.
-- Insufficient funds test.
-- Self-transfer rejection test.
-- Integration end-to-end: create wallets -> transfer -> assert balances and ledgers.
+**Data model & DB constraints**
+
+- **Transactions table**:
+  - `idempotency_key VARCHAR NOT NULL UNIQUE`
+  - `status` as enum (`pending`, `completed`, `failed`)
+  - indexes: `created_at`, `sender_wallet_id`, `receiver_wallet_id` for queries.
+
+- **Wallets**:
+  - `balance NUMERIC(18,2) NOT NULL` with a DB CHECK to prevent negative balances where applicable.
+  - Foreign keys to users; add index on `user_id`.
+
+- **Ledger**:
+  - Immutable rows once inserted.
+  - Use `created_at` timestamp and consider partitioning for very large volumes.
 
 ---
 
-## What you should learn / deepen
-- SQL transactions, isolation levels, and SELECT FOR UPDATE semantics.
-- Deadlock avoidance and retry strategies (Postgres serialization errors).
-- Double-entry accounting models (balance_before/after).
-- Proper use of decimal arithmetic in Go (shopspring/decimal).
-- Patterns for idempotency in distributed systems.
-- Writing integration tests with ephemeral Postgres (testcontainers or docker).
+**API surface (recommended for MVP)**
+
+- `POST /transfer` — create transfer (idempotent via header/body idempotency_key).
+- `GET /wallets/:id` — return wallet with current balance.
+- `GET /wallets/:id/transactions` — paginated list using ledger or transactions read-side.
+- `GET /transactions/:id` — transaction detail.
+
+Notes:
+- Keep handler DTOs simple (strings/primitive types). Convert to `pgtype` only in service layer.
+- Use headers for `Idempotency-Key` or accept in request body — document chosen pattern.
 
 ---
 
-## Hard challenges (advanced tasks)
-- Implement a safe compensating/reversal mechanism for failed external side-effects.
-- Add multi-currency transfers with FX rates and atomic conversions (ledger correctness).
-- Implement an event-sourcing or CQRS read-side for transaction history with eventual consistency.
-- Implement high-throughput benchmark with concurrent transfers and measure throughput/latency.
+**Operational & safety features (must for production-grade)**
+
+- **Authentication & Authorization**
+  - Enforce that the authenticated user owns the `sender_wallet_id`.
+  - RBAC for administrative endpoints.
+
+- **Rate limiting and per-user quotas**
+  - Prevent abuse / replay by limiting transfers per minute/day per user.
+
+- **Context timeouts**
+  - Set request-level timeouts (e.g., 5s) and shorter DB context timeouts for TXs.
+
+- **Observability**
+  - Structured logs (`slog`) with request id / trace id / idempotency key / tx id.
+  - Tracing (OpenTelemetry): trace the lifecycle of a transfer across DB calls, tasks, notifications.
+  - Metrics (Prometheus): request latency, tx success/failure counts, concurrent txs, DB errors, idempotency conflicts.
+
+- **Health checks & graceful shutdown**
+  - `/healthz` readiness/liveness endpoints; close DB pool on shutdown.
+
+- **Migrations & backups**
+  - Use goose or another migration tool; ensure migrations are in CI.
+  - Regular DB backups and tested restore playbook.
+
+- **Secrets management**
+  - Use env vars + Vault/Secret Manager for DB credentials and API keys.
+
+- **Deployment**
+  - Containerize (Docker), provide manifest (Kubernetes) with resources, liveness/readiness probes.
+  - CI pipeline: `go vet`, `golangci-lint`, `go test`, `sqlc generate`, run migrations and integration tests before merge.
 
 ---
 
-## Concrete next steps (short checklist)
-- [ ] Fix error returns in CreateTransaction (return err, not nil).
-- [ ] Add defer tx.Rollback(ctx) immediately after tx begin.
-- [ ] Distinguish "not found" error when checking idempotency.
-- [ ] Implement transfer pipeline (create pending tx -> ledger entries -> update balances -> commit).
-- [ ] Add DB unique index on idempotency_key and handle conflicts.
-- [ ] Add unit tests and 1 integration test for a successful transfer.
-- [ ] Add concurrency test to prove no double spending.
+**Resilience & concurrency strategies**
+
+- **Retry strategy**
+  - Retry on serialization failures (Postgres 40001) with exponential backoff and jitter — keep retry attempts small (≤3).
+
+- **Lock ordering**
+  - Always lock wallets in deterministic order (by UUID bytes) to reduce deadlocks.
+
+- **Idempotency beyond DB**
+  - For external side-effects (webhooks, notifications), use an outbox table or task queue that is written inside the same TX and processed after commit.
 
 ---
 
-## Recommended priority for the next 2 weeks
-1. Implement correct CreateTransaction flow + DB transaction handling (one PR).
-2. Add idempotency DB constraint + tests.
-3. Add integration tests for concurrency and insufficient funds.
+**Testing & QA (detailed)**
+
+- **Unit tests**: service methods with mocked `db.Queries` — assert ledger creation and balance updates.
+- **Integration tests**: start Postgres, run migrations, exercise full APIs.
+- **Concurrency stress tests**: run 1000+ concurrent transfers in test environment to assert invariants.
+- **Load tests**: use k6 or Gatling to measure throughput/latency and find bottlenecks.
+- **Property tests**: fuzz amounts, ids and check invariants (sum of balances + ledgers consistency).
 
 ---
 
-Maintain commit-sized tasks, add tests for each change, and run integration tests in CI before merging.
+**Advanced roadmap (post-MVP)**
+
+- **Settlement & rails**: integrate with external payment rails, handle settlement delays and reconciliation.
+- **Multi-currency and FX**: atomic conversion, FX table, rounding rules, fees.
+- **Event sourcing / CQRS**: separate write model (ledger) and read model for high-performance queries.
+- **Archival & partitioning**: archive old ledger rows, partition by date for scale.
+- **Disaster recovery**: automated backups, warm standbys, failover automation.
+- **Compliance**: audit trails, immutable logs, GDPR data handling, KYC/AML hooks.
+
+---
+
+**Acceptance criteria & checkboxes (MVP)**
+
+- [ ] `POST /transfer` end-to-end works (happy path) and returns `200` with transaction.
+- [ ] Idempotency enforced: same idempotency key twice returns same transaction; no duplicate ledger.
+- [ ] Concurrency test: concurrent transfers do not create negative balances or double entries.
+- [ ] Unit tests + integration test pass in CI.
+- [ ] Observability: request traces and basic Prometheus metrics in place.
+- [ ] DB migration for unique `idempotency_key` exists and is applied in integration tests.
+
+---
+
+If you'd like, I will:
+
+- implement the remaining P0 tasks in `internal/transfer/service.go` and the handler DTO + validation;
+- add unit + integration tests for the transfer flow including a concurrency test;
+- wire in OpenTelemetry + Prometheus metrics scaffolding;
+- or produce PR-sized patches for each of the above in sequence.
+
+Tell me which of these to start with and I will add a targeted todo list and implement the first change.

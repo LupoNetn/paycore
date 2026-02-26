@@ -10,6 +10,7 @@ import (
 	"github.com/luponetn/paycore/internal/db"
 	"github.com/luponetn/paycore/internal/tasks"
 	"github.com/luponetn/paycore/internal/transfer"
+	"github.com/luponetn/paycore/internal/wallet"
 )
 
 type Application struct {
@@ -54,14 +55,17 @@ func main() {
 	//register service
 	authSvc := auth.NewService(queries, cfg, taskClient, dbConn)
 	transferSvc := transfer.NewService(queries, dbConn)
+	walletSvc := wallet.NewService(queries, dbConn)
 
 	//register handler
 	authHandler := auth.NewHandler(authSvc)
 	transferHandler := transfer.NewHandler(transferSvc)
+	walletHandler := wallet.NewHandler(walletSvc)
 
 	//register routes
 	auth.RegisterRoutes(router, authHandler)
 	transfer.RegisterRoutes(router,transferHandler)
+	wallet.RegisterRoutes(router,walletHandler)
 
 	slog.Info("Starting server on port: " + cfg.Port)
 
