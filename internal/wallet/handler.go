@@ -49,6 +49,11 @@ func (h *Handler) GetWalletHandler(c *gin.Context) {
 
 // GetWalletTransactionsHandler handles GET /wallet/:id/transactions
 func (h *Handler) GetWalletTransactionsHandler(c *gin.Context) {
+	var query PaginationQuery
+	if err := c.ShouldBindQuery(&query); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid query parameters"})
+		return
+	}
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "wallet id is required"})
@@ -78,7 +83,10 @@ func (h *Handler) GetWalletTransactionsHandler(c *gin.Context) {
 		return
 	}
 
-	transactions, err := h.Svc.GetWalletTransactionsService(c.Request.Context(), walletID)
+	limit := query.pageSize
+	offset := (query.page - 1) * query.pageSize
+
+	transactions, err := h.Svc.GetWalletTransactionsService(c.Request.Context(), walletID, limit,offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

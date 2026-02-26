@@ -6,11 +6,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/pkg/utils"
 )
 
 type Service interface {
 	GetWalletService(ctx context.Context, walletID uuid.UUID) (db.Wallet, error)
-	GetWalletTransactionsService(ctx context.Context, walletID uuid.UUID) ([]db.Transaction, error)
+	GetWalletTransactionsService(ctx context.Context, walletID uuid.UUID, limit int32, wallet int32) ([]db.Transaction, error)
 }
 
 type Svc struct {
@@ -28,11 +29,11 @@ func (s *Svc) GetWalletService(ctx context.Context, walletID uuid.UUID) (db.Wall
 }
 
 // GetWalletTransactionsService returns all transactions for a wallet (paginated, default limit 50, offset 0)
-func (s *Svc) GetWalletTransactionsService(ctx context.Context, walletID uuid.UUID) ([]db.Transaction, error) {
+func (s *Svc) GetWalletTransactionsService(ctx context.Context, walletID uuid.UUID, limit int32, offset int32) ([]db.Transaction, error) {
 	params := db.GetTransactionsByWalletIdParams{
-		SenderWalletID: walletID,
-		Limit:          50,
-		Offset:         0,
+		SenderWalletID: utils.ToPgUUID(walletID),
+		Limit:          limit,
+		Offset:         offset,
 	}
 	return s.queries.GetTransactionsByWalletId(ctx, params)
 }
