@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
@@ -32,6 +33,9 @@ func NewService(queries *db.Queries, db *pgxpool.Pool) Service {
 
 // 1. CreateTransaction - creates a transaction record with pending status, creates double ledger entries for both sender and receiver, updates wallet balance for both sender and receiver, and finally updates transaction record with completed status. All of these operations are done in a single db transaction to ensure atomicity. Also implements idempotency key to prevent duplicate transactions.
 func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionRequest) (db.Transaction, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
 		slog.Error("could not initialized db transaction for create transaction service", "error", err)
@@ -57,6 +61,7 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 		ID_2: req.ReceiverWalletID.Bytes,
 	}
 	var senderWallet, receiverWallet db.GetWalletsAndLockByWalletIdsRow
+
 	wallets, err := qtx.GetWalletsAndLockByWalletIds(ctx, fetchWalletsParams)
 	if err != nil {
 		slog.Error("error fetching wallets and acquiring lock for transfer transaction", "error", err)
@@ -72,7 +77,6 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 		receiverWallet = wallets[0]
 	}
 
-	//confirm sender balance is accurate
 	//convert pgType.Numeric struct to decimal for comparison
 	senderBalanceDecimal := decimal.NewFromBigInt(senderWallet.Balance.Int, senderWallet.Balance.Exp)
 	reqAmountDecimal := decimal.NewFromBigInt(req.Amount.Int, req.Amount.Exp)
@@ -136,7 +140,6 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 	newReceiverBalance := receiverBalanceDecimal.Add(amountDecimal)
 
 	//create double-entry ledger for both debit and credit
-
 	//1. create debit ledger entry for sender
 	debitLedgerParams := db.CreateLedgerParams{
 		WalletID:      senderWallet.ID,

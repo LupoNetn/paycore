@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"log/slog"
+	"time"
 
 	// "time"
 
@@ -36,6 +37,8 @@ func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Clien
 
 // SignUp handles the business logic for user registration
 func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	//  Hash the password
 	hashedPassword, err := utils.HashPassword(req.Password)
 	if err != nil {
@@ -111,6 +114,8 @@ func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, erro
 
 // login handles the business logic for user login
 func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	user, err := s.queries.GetUserByEmail(ctx, req.Email)
 	if err != nil {
 		slog.Error("failed to get user by email", "error", err)
@@ -151,6 +156,8 @@ func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error
 
 // refres token endpoint
 func (s *Svc) Refresh(ctx context.Context, req RefreshRequest) (RefreshResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
 	claims, err := utils.VerifyToken(req.RefreshToken, s.cfg.JWTRefreshSecret)
 	if err != nil {
 		slog.Error("could not verify refresh token for user", "error", err)

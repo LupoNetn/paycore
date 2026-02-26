@@ -148,22 +148,58 @@ Notes:
 
 ---
 
-**Acceptance criteria & checkboxes (MVP)**
 
-- [ ] `POST /transfer` end-to-end works (happy path) and returns `200` with transaction.
-- [ ] Idempotency enforced: same idempotency key twice returns same transaction; no duplicate ledger.
-- [ ] Concurrency test: concurrent transfers do not create negative balances or double entries.
-- [ ] Unit tests + integration test pass in CI.
-- [ ] Observability: request traces and basic Prometheus metrics in place.
-- [ ] DB migration for unique `idempotency_key` exists and is applied in integration tests.
+
+## Remaining MVP Tasks
+
+- [ ] Handler input validation (DTOs, positive amounts, currency, idempotency key)
+- [ ] Proper error mapping (typed errors → HTTP codes)
+- [ ] Unit tests for transfer, wallet, ledger flows
+- [ ] Integration tests (end-to-end, DB migrations)
+- [ ] Concurrency test (no double-spend, idempotency)
+- [ ] Observability: logs, metrics, traces
+- [ ] Health check endpoint (`/healthz`)
+- [ ] Rate limiting and quotas (optional for MVP)
+- [ ] API documentation and operational playbook
 
 ---
 
-If you'd like, I will:
+## Advanced Roadmap (post-MVP)
 
-- implement the remaining P0 tasks in `internal/transfer/service.go` and the handler DTO + validation;
-- add unit + integration tests for the transfer flow including a concurrency test;
-- wire in OpenTelemetry + Prometheus metrics scaffolding;
-- or produce PR-sized patches for each of the above in sequence.
+- Settlement rails integration
+- Multi-currency and FX
+- Event sourcing / CQRS
+- Archival & partitioning
+- Disaster recovery
+- Compliance (audit, GDPR, KYC/AML)
 
-Tell me which of these to start with and I will add a targeted todo list and implement the first change.
+---
+
+**Next steps:**
+- Implement handler validation and error mapping
+- Add tests (unit, integration, concurrency)
+- Add observability and health check
+- Document API and ops
+
+Ping me to start any of these tasks and I'll add a targeted todo list and implement the first change.
+
+---
+
+## Advanced Roadmap (post-MVP)
+
+- Settlement rails integration
+- Multi-currency and FX
+- Event sourcing / CQRS
+- Archival & partitioning
+- Disaster recovery
+- Compliance (audit, GDPR, KYC/AML)
+
+---
+
+**Next steps:**
+- Implement handler validation and error mapping
+- Add tests (unit, integration, concurrency)
+- Add observability and health check
+- Document API and ops
+
+Ping me to start any of these tasks and I'll add a targeted todo list and implement the first change.
