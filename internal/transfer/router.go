@@ -14,5 +14,6 @@ func RegisterRoutes(r *gin.Engine, h *Handler) {
 	//implement routes
 	{
 		transferGroup.POST("/", h.HandleCreateTransaction)
+		transferGroup.GET("/:id", h.HandleGetTransactionByID)
 	}
 }

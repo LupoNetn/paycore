@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -15,6 +16,7 @@ import (
 
 type Service interface {
 	CreateTransaction(ctx context.Context, req CreateTransactionRequest) (db.Transaction, error)
+	GetTransactionByID(ctx context.Context, transactionID uuid.UUID) (db.Transaction, error)
 }
 
 type Svc struct {
@@ -206,4 +208,8 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 	}
 
 	return createdTransaction, nil
+}
+
+func (s *Svc) GetTransactionByID(ctx context.Context, transactionID uuid.UUID) (db.Transaction, error) {
+	return s.queries.GetTransactionById(ctx, transactionID)
 }

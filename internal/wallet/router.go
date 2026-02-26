@@ -10,5 +10,6 @@ func RegisterRoutes(r *gin.Engine, h *Handler) {
 	walletGroup.Use(middleware.AuthMiddleware())
 	{
 		walletGroup.GET("/:id", h.GetWalletHandler)
+		walletGroup.GET("/:id/transactions", h.GetWalletTransactionsHandler)
 	}
 }
