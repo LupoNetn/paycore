@@ -6,16 +6,16 @@ import (
 )
 
 type SignUpRequest struct {
-	FullName    string `json:"full_name"`
-	PhoneNumber string `json:"phone_number"`
-	Email       string `json:"email"`
-	Password    string `json:"password"`
-	Nationality string `json:"nationality"`
+	FullName    string `json:"full_name" binding:"required"`
+	PhoneNumber string `json:"phone_number" binding:"required"`
+	Email       string `json:"email" binding:"required,email"`
+	Password    string `json:"password" binding:"required,min=8"`
+	Nationality string `json:"nationality" binding:"required"`
 }
 
 type LoginRequest struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email    string `json:"email" binding:"required,email"`
+	Password string `json:"password" binding:"required,min=8"`
 }
 
 type UserResponse struct {

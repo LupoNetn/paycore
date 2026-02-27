@@ -37,108 +37,80 @@ func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Clien
 
 // SignUp handles the business logic for user registration
 func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Single timeout for entire operation (all retries + backoff + actual work)
+	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
-	//  Hash the password
-	hashedPassword, err := utils.HashPassword(req.Password)
-	if err != nil {
-		return UserResponse{}, err
-	}
 
-	// Generate unique username
-	username := utils.GenerateUsername(req.FullName)
-
-	// Generate account number from phone number
-	accountNo := utils.GenerateAccountNumber(req.PhoneNumber)
-
-	// Create the user in the database
-	arg := db.CreateUserParams{
-		FullName:     req.FullName,
-		PhoneNumber:  req.PhoneNumber,
-		Email:        req.Email,
-		Passwordhash: hashedPassword,
-		Username:     username,
-		AccountNo:    accountNo,
-		Nationality:  req.Nationality,
-	}
-
-	tx, err := s.db.Begin(ctx)
-	if err != nil {
-		return UserResponse{}, err
-	}
-	defer tx.Rollback(ctx)
-
-	qtx := s.queries.WithTx(tx)
-
-	user, err := qtx.CreateUser(ctx, arg)
-	if err != nil {
-		return UserResponse{}, err
-	}
-
-	//TODO: create wallet for the user
-	walletTypes := []db.WalletTypeEnum{
-		db.WalletTypeEnumSavings,
-		db.WalletTypeEnumFixed,
-		db.WalletTypeEnumMisc,
-	}
-
-	for _, value := range walletTypes {
-		_, err := qtx.CreateWallet(ctx, db.CreateWalletParams{
-			UserID:     utils.ToPgUUID(user.ID),
-			WalletType: db.WalletTypeEnum(value),
-			Currency:   "NGN",
-		})
-
+	return utils.Retry(3, 100, func() (UserResponse, error) {
+		//  Hash the password
+		hashedPassword, err := utils.HashPassword(req.Password)
 		if err != nil {
-			slog.Error("could not create wallets for user", "error", err)
 			return UserResponse{}, err
 		}
-	}
 
-	if err := tx.Commit(ctx); err != nil {
-		return UserResponse{}, err
-	}
+		// Generate unique username
+		username := utils.GenerateUsername(req.FullName)
 
-	return UserResponse{
-		ID:          user.ID,
-		FullName:    user.FullName,
-		PhoneNumber: user.PhoneNumber,
-		Email:       user.Email,
-		Username:    user.Username,
-		AccountNo:   user.AccountNo,
-		Nationality: user.Nationality,
-		CreatedAt:   user.CreatedAt,
-		UpdatedAt:   user.UpdatedAt,
-	}, nil
-}
+		// Generate account number from phone number
+		accountNo := utils.GenerateAccountNumber(req.PhoneNumber)
 
-// login handles the business logic for user login
-func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	user, err := s.queries.GetUserByEmail(ctx, req.Email)
-	if err != nil {
-		slog.Error("failed to get user by email", "error", err)
-		return LoginResponse{}, err
-	}
+		// Create the user in the database
+		arg := db.CreateUserParams{
+			FullName:     req.FullName,
+			PhoneNumber:  req.PhoneNumber,
+			Email:        req.Email,
+			Passwordhash: hashedPassword,
+			Username:     username,
+			AccountNo:    accountNo,
+			Nationality:  req.Nationality,
+		}
 
-	if err := utils.CheckPassword(req.Password, user.Passwordhash); err != nil {
-		slog.Error("failed to check password", "error", err)
-		return LoginResponse{}, err
-	}
+		tx, err := s.db.Begin(ctx)
+		if err != nil {
+			slog.Error("failed to begin transaction in signup", "error", err)
+			return UserResponse{}, &utils.RetryableError{Err: err}
+		}
 
-	accessToken, err := utils.GenerateToken(user.ID, user.Username, s.cfg.JWTAccessSecret, "access")
-	if err != nil {
-		return LoginResponse{}, err
-	}
+		defer func() {
+			if rbErr := tx.Rollback(ctx); rbErr != nil && rbErr.Error() != "tx is closed" {
+				slog.Error("failed to rollback signup tx", "error", rbErr)
+			}
+		}()
 
-	refreshToken, err := utils.GenerateToken(user.ID, user.Username, s.cfg.JWTRefreshSecret, "refresh")
-	if err != nil {
-		return LoginResponse{}, err
-	}
+		qtx := s.queries.WithTx(tx)
 
-	return LoginResponse{
-		User: UserResponse{
+		user, err := qtx.CreateUser(ctx, arg)
+		if err != nil {
+			slog.Error("failed to create user in signup", "error", err)
+			return UserResponse{}, &utils.RetryableError{Err: err}
+		}
+
+		//TODO: create wallet for the user
+		walletTypes := []db.WalletTypeEnum{
+			db.WalletTypeEnumSavings,
+			db.WalletTypeEnumFixed,
+			db.WalletTypeEnumMisc,
+		}
+
+		for _, value := range walletTypes {
+			_, err := qtx.CreateWallet(ctx, db.CreateWalletParams{
+				UserID:     utils.ToPgUUID(user.ID),
+				WalletType: db.WalletTypeEnum(value),
+				Currency:   "NGN",
+			})
+
+			if err != nil {
+				slog.Error("could not create wallets for user", "error", err)
+				return UserResponse{}, &utils.RetryableError{Err: err}
+			}
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			slog.Error("failed to commit signup transaction", "error", err)
+			return UserResponse{}, &utils.RetryableError{Err: err}
+		}
+
+		return UserResponse{
 			ID:          user.ID,
 			FullName:    user.FullName,
 			PhoneNumber: user.PhoneNumber,
@@ -148,37 +120,85 @@ func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error
 			Nationality: user.Nationality,
 			CreatedAt:   user.CreatedAt,
 			UpdatedAt:   user.UpdatedAt,
-		},
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-	}, nil
+		}, nil
+	})
+}
+
+// login handles the business logic for user login
+func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error) {
+	// Single timeout for entire operation (all retries + backoff + actual work)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+
+	return utils.Retry(3, 100, func() (LoginResponse, error) {
+		user, err := s.queries.GetUserByEmail(ctx, req.Email)
+		if err != nil {
+			slog.Error("failed to get user by email", "error", err)
+			return LoginResponse{}, &utils.RetryableError{Err: err}
+		}
+
+		if err := utils.CheckPassword(req.Password, user.Passwordhash); err != nil {
+			slog.Error("failed to check password", "error", err)
+			return LoginResponse{}, err // Not retryable - password mismatch is application logic
+		}
+
+		accessToken, err := utils.GenerateToken(user.ID, user.Username, s.cfg.JWTAccessSecret, "access")
+		if err != nil {
+			return LoginResponse{}, err
+		}
+
+		refreshToken, err := utils.GenerateToken(user.ID, user.Username, s.cfg.JWTRefreshSecret, "refresh")
+		if err != nil {
+			return LoginResponse{}, err
+		}
+
+		return LoginResponse{
+			User: UserResponse{
+				ID:          user.ID,
+				FullName:    user.FullName,
+				PhoneNumber: user.PhoneNumber,
+				Email:       user.Email,
+				Username:    user.Username,
+				AccountNo:   user.AccountNo,
+				Nationality: user.Nationality,
+				CreatedAt:   user.CreatedAt,
+				UpdatedAt:   user.UpdatedAt,
+			},
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+		}, nil
+	})
 }
 
 // refres token endpoint
 func (s *Svc) Refresh(ctx context.Context, req RefreshRequest) (RefreshResponse, error) {
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// Single timeout for entire operation (all retries + backoff + actual work)
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
-	claims, err := utils.VerifyToken(req.RefreshToken, s.cfg.JWTRefreshSecret)
-	if err != nil {
-		slog.Error("could not verify refresh token for user", "error", err)
-		return RefreshResponse{}, err
-	}
 
-	newAccessToken, accessErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTAccessSecret, "access")
-	if accessErr != nil {
-		slog.Error("could not generate new access token for refresh service", "error", accessErr)
-		return RefreshResponse{}, accessErr
-	}
-	newRefreshToken, refreshErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTRefreshSecret, "refresh")
-	if refreshErr != nil {
-		slog.Error("could not generate new refresh token for refresh service", "error", refreshErr)
-		return RefreshResponse{}, accessErr
-	}
+	return utils.Retry(3, 100, func() (RefreshResponse, error) {
+		claims, err := utils.VerifyToken(req.RefreshToken, s.cfg.JWTRefreshSecret)
+		if err != nil {
+			slog.Error("could not verify refresh token for user", "error", err)
+			return RefreshResponse{}, err // Not retryable - token verification is deterministic
+		}
 
-	return RefreshResponse{
-		AccessToken:  newAccessToken,
-		RefreshToken: newRefreshToken,
-	}, nil
+		newAccessToken, accessErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTAccessSecret, "access")
+		if accessErr != nil {
+			slog.Error("could not generate new access token for refresh service", "error", accessErr)
+			return RefreshResponse{}, accessErr
+		}
+		newRefreshToken, refreshErr := utils.GenerateToken(claims.UserID, claims.Username, s.cfg.JWTRefreshSecret, "refresh")
+		if refreshErr != nil {
+			slog.Error("could not generate new refresh token for refresh service", "error", refreshErr)
+			return RefreshResponse{}, refreshErr
+		}
+
+		return RefreshResponse{
+			AccessToken:  newAccessToken,
+			RefreshToken: newRefreshToken,
+		}, nil
+	})
 }
 
 // createOtp handles the creation of otp in the database

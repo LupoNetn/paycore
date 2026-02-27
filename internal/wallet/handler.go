@@ -24,18 +24,30 @@ func (h *Handler) GetWalletHandler(c *gin.Context) {
 		return
 	}
 
-	userID, exists := c.Get("user_id")
+	walletUserID, err := uuid.Parse(id)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid wallet id"})
+		return
+	}
+
+	userIDVal, exists := c.Get("user_id")
 	if !exists {
 		c.JSON(401, gin.H{"error": "user id not found in context"})
 		return
 	}
 
-	if userID != uuid.MustParse(id) {
+	userID, ok := userIDVal.(uuid.UUID)
+	if !ok {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "user id in context is not a valid UUID"})
+		return
+	}
+
+	if userID != walletUserID {
 		c.JSON(403, gin.H{"error": "forbidden: you can only access your own wallet"})
 		return
 	}
 
-	wallet, err := h.Svc.GetWalletService(c.Request.Context(), uuid.MustParse(id))
+	wallet, err := h.Svc.GetWalletService(c.Request.Context(), walletUserID)
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -83,10 +95,10 @@ func (h *Handler) GetWalletTransactionsHandler(c *gin.Context) {
 		return
 	}
 
-	limit := query.pageSize
-	offset := (query.page - 1) * query.pageSize
+	limit := query.PageSize
+	offset := (query.Page - 1) * query.PageSize
 
-	transactions, err := h.Svc.GetWalletTransactionsService(c.Request.Context(), walletID, limit,offset)
+	transactions, err := h.Svc.GetWalletTransactionsService(c.Request.Context(), walletID, limit, offset)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

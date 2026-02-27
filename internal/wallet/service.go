@@ -26,19 +26,35 @@ func NewService(queries *db.Queries, db *pgxpool.Pool) Service {
 
 // implement services for all wallet operations
 func (s *Svc) GetWalletService(ctx context.Context, walletID uuid.UUID) (db.Wallet, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	// Single timeout for entire operation (all retries + backoff + actual work)
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	return s.queries.GetWalletById(ctx, walletID)
+
+	return utils.Retry(3, 100, func() (db.Wallet, error) {
+		wallet, err := s.queries.GetWalletById(ctx, walletID)
+		if err != nil {
+			return db.Wallet{}, &utils.RetryableError{Err: err}
+		}
+		return wallet, nil
+	})
 }
 
 // GetWalletTransactionsService returns all transactions for a wallet (paginated, default limit 50, offset 0)
 func (s *Svc) GetWalletTransactionsService(ctx context.Context, walletID uuid.UUID, limit int32, offset int32) ([]db.Transaction, error) {
-	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	// Single timeout for entire operation (all retries + backoff + actual work)
+	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
-	params := db.GetTransactionsByWalletIdParams{
-		SenderWalletID: utils.ToPgUUID(walletID),
-		Limit:          limit,
-		Offset:         offset,
-	}
-	return s.queries.GetTransactionsByWalletId(ctx, params)
+
+	return utils.Retry(3, 100, func() ([]db.Transaction, error) {
+		params := db.GetTransactionsByWalletIdParams{
+			SenderWalletID: utils.ToPgUUID(walletID),
+			Limit:          limit,
+			Offset:         offset,
+		}
+		transactions, err := s.queries.GetTransactionsByWalletId(ctx, params)
+		if err != nil {
+			return nil, &utils.RetryableError{Err: err}
+		}
+		return transactions, nil
+	})
 }
