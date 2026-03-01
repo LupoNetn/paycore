@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgconn"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/internal/store"
 	"github.com/luponetn/paycore/pkg/utils"
 	"github.com/shopspring/decimal"
 )
@@ -21,12 +21,11 @@ type Service interface {
 }
 
 type Svc struct {
-	db      *pgxpool.Pool
-	queries *db.Queries
+	store store.Store
 }
 
-func NewService(queries *db.Queries, db *pgxpool.Pool) Service {
-	return &Svc{queries: queries, db: db}
+func NewService(store store.Store) Service {
+	return &Svc{store: store}
 }
 
 // implement Services
@@ -38,7 +37,7 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 	defer cancel()
 
 	return utils.Retry(3, 100, func() (db.Transaction, error) {
-		tx, err := s.db.Begin(ctx)
+		tx, err := s.store.Begin(ctx)
 		if err != nil {
 			slog.Error("could not initialized db transaction for create transaction service", "error", err)
 			return db.Transaction{}, &utils.RetryableError{Err: err}
@@ -52,7 +51,7 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 			}
 		}()
 
-		qtx := s.queries.WithTx(tx)
+		qtx := s.store.WithTx(tx)
 
 		// Note: idempotency is handled atomically by relying on a DB unique
 		// constraint on `idempotency_key` and handling duplicate-key errors below.
@@ -217,5 +216,5 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 }
 
 func (s *Svc) GetTransactionByID(ctx context.Context, transactionID uuid.UUID) (db.Transaction, error) {
-	return s.queries.GetTransactionById(ctx, transactionID)
+	return s.store.Queries().GetTransactionById(ctx, transactionID)
 }

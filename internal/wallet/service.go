@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/internal/store"
 	"github.com/luponetn/paycore/pkg/utils"
 )
 
@@ -16,13 +16,12 @@ type Service interface {
 }
 
 type Svc struct {
-	db      *pgxpool.Pool
-	queries *db.Queries
+	store store.Store
 }
 
-func NewService(queries *db.Queries, db *pgxpool.Pool) Service {
-	return &Svc{queries: queries, db: db}
-}
+	func NewService(store store.Store) Service {
+		return &Svc{store: store}
+	}
 
 // implement services for all wallet operations
 func (s *Svc) GetWalletService(ctx context.Context, walletID uuid.UUID) (db.Wallet, error) {
@@ -31,7 +30,7 @@ func (s *Svc) GetWalletService(ctx context.Context, walletID uuid.UUID) (db.Wall
 	defer cancel()
 
 	return utils.Retry(3, 100, func() (db.Wallet, error) {
-		wallet, err := s.queries.GetWalletById(ctx, walletID)
+		wallet, err := s.store.Queries().GetWalletById(ctx, walletID)
 		if err != nil {
 			return db.Wallet{}, &utils.RetryableError{Err: err}
 		}
@@ -51,7 +50,7 @@ func (s *Svc) GetWalletTransactionsService(ctx context.Context, walletID uuid.UU
 			Limit:          limit,
 			Offset:         offset,
 		}
-		transactions, err := s.queries.GetTransactionsByWalletId(ctx, params)
+		transactions, err := s.store.Queries().GetTransactionsByWalletId(ctx, params)
 		if err != nil {
 			return nil, &utils.RetryableError{Err: err}
 		}

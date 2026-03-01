@@ -11,15 +11,14 @@ import (
 
 	// "github.com/google/uuid"
 	"github.com/hibiken/asynq"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/internal/store"
 	"github.com/luponetn/paycore/pkg/utils"
 )
 
 type Svc struct {
-	db         *pgxpool.Pool
-	queries    *db.Queries
+	store store.Store
 	cfg        *config.Config
 	taskClient *asynq.Client
 }
@@ -31,8 +30,8 @@ type Service interface {
 	//CreateOTP(ctx context.Context, userID uuid.UUID) (OTPResponse, error)
 }
 
-func NewService(queries *db.Queries, cfg *config.Config, taskClient *asynq.Client, db *pgxpool.Pool) Service {
-	return &Svc{db: db, queries: queries, cfg: cfg, taskClient: taskClient}
+func NewService(store store.Store, taskClient *asynq.Client, cfg *config.Config) Service {
+	return &Svc{store: store, cfg: cfg, taskClient: taskClient}
 }
 
 // SignUp handles the business logic for user registration
@@ -65,7 +64,7 @@ func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, erro
 			Nationality:  req.Nationality,
 		}
 
-		tx, err := s.db.Begin(ctx)
+		tx, err := s.store.Begin(ctx)
 		if err != nil {
 			slog.Error("failed to begin transaction in signup", "error", err)
 			return UserResponse{}, &utils.RetryableError{Err: err}
@@ -77,7 +76,7 @@ func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, erro
 			}
 		}()
 
-		qtx := s.queries.WithTx(tx)
+		qtx := s.store.WithTx(tx)
 
 		user, err := qtx.CreateUser(ctx, arg)
 		if err != nil {
@@ -131,7 +130,7 @@ func (s *Svc) Login(ctx context.Context, req LoginRequest) (LoginResponse, error
 	defer cancel()
 
 	return utils.Retry(3, 100, func() (LoginResponse, error) {
-		user, err := s.queries.GetUserByEmail(ctx, req.Email)
+		user, err := s.store.Queries().GetUserByEmail(ctx, req.Email)
 		if err != nil {
 			slog.Error("failed to get user by email", "error", err)
 			return LoginResponse{}, &utils.RetryableError{Err: err}

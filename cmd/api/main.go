@@ -8,6 +8,7 @@ import (
 	"github.com/luponetn/paycore/internal/auth"
 	"github.com/luponetn/paycore/internal/config"
 	"github.com/luponetn/paycore/internal/db"
+	"github.com/luponetn/paycore/internal/store"
 	"github.com/luponetn/paycore/internal/tasks"
 	"github.com/luponetn/paycore/internal/transfer"
 	"github.com/luponetn/paycore/internal/wallet"
@@ -48,14 +49,17 @@ func main() {
 	router := app.SetupRouter()
 	queries := db.New(dbConn)
 
+	//postgresStore setup for main app db calls
+	postgresStore := store.NewPostgresStore(dbConn,queries)
+
 	//setup task client
 	taskClient := tasks.NewTaskClient(cfg.RedisAddr)
 	defer taskClient.Close()
 
 	//register service
-	authSvc := auth.NewService(queries, cfg, taskClient, dbConn)
-	transferSvc := transfer.NewService(queries, dbConn)
-	walletSvc := wallet.NewService(queries, dbConn)
+	authSvc := auth.NewService(postgresStore,taskClient,cfg)
+	transferSvc := transfer.NewService(postgresStore)
+	walletSvc := wallet.NewService(postgresStore)
 
 	//register handler
 	authHandler := auth.NewHandler(authSvc)
