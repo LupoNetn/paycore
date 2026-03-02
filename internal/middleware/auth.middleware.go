@@ -1,24 +1,37 @@
 package middleware
 
 import (
+	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/luponetn/paycore/pkg/utils"
 )
 
-func AuthMiddleware() gin.HandlerFunc {
+func AuthMiddleware(secret string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		tokenString := c.GetHeader("Authorization")
-		if tokenString == "" {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "authorization token is required"})
 			c.Abort()
 			return
 		}
 
-		claims, err := utils.VerifyToken(tokenString, "access")
+		// Check for Bearer prefix
+		parts := strings.Split(authHeader, " ")
+		if len(parts) != 2 || parts[0] != "Bearer" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header format"})
+			c.Abort()
+			return
+		}
+
+		tokenString := parts[1]
+
+		claims, err := utils.VerifyToken(tokenString, secret)
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization token"})
+			slog.Error("JWT verification failed", "error", err, "token_snippet", tokenString[:10]+"...")
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization token", "details": err.Error()})
 			c.Abort()
 			return
 		}

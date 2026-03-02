@@ -20,9 +20,10 @@ INSERT INTO users (
     passwordHash,
     username,
     account_no,
-    nationality
+    nationality,
+    country_code
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
 RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code
 `
@@ -35,6 +36,7 @@ type CreateUserParams struct {
 	Username     string `json:"username"`
 	AccountNo    string `json:"account_no"`
 	Nationality  string `json:"nationality"`
+	CountryCode  string `json:"country_code"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -46,6 +48,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Username,
 		arg.AccountNo,
 		arg.Nationality,
+		arg.CountryCode,
 	)
 	var i User
 	err := row.Scan(
@@ -156,8 +159,9 @@ SET
     username = COALESCE($5, username),
     account_no = COALESCE($6, account_no),
     nationality = COALESCE($7, nationality),
+    country_code = COALESCE($8, country_code),
     updated_at = NOW()
-WHERE id = $8
+WHERE id = $9
 RETURNING id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code
 `
 
@@ -169,6 +173,7 @@ type UpdateUserParams struct {
 	Username     pgtype.Text `json:"username"`
 	AccountNo    pgtype.Text `json:"account_no"`
 	Nationality  pgtype.Text `json:"nationality"`
+	CountryCode  pgtype.Text `json:"country_code"`
 	ID           uuid.UUID   `json:"id"`
 }
 
@@ -181,6 +186,7 @@ func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) (User, e
 		arg.Username,
 		arg.AccountNo,
 		arg.Nationality,
+		arg.CountryCode,
 		arg.ID,
 	)
 	var i User

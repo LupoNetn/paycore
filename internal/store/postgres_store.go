@@ -9,26 +9,26 @@ import (
 )
 
 type PostgresStore struct {
-	db *pgxpool.Pool
+	db      *pgxpool.Pool
 	queries *db.Queries
 }
 
 func NewPostgresStore(db *pgxpool.Pool, queries *db.Queries) *PostgresStore {
 	return &PostgresStore{
-		db: db,
+		db:      db,
 		queries: queries,
 	}
 }
 
-//make postgres store implement the Store interface
-func (s *PostgresStore) Begin(ctx context.Context) (pgx.Tx, error) {
+// make postgres store implement the Store interface
+func (s *PostgresStore) Begin(ctx context.Context) (Transaction, error) {
 	return s.db.Begin(ctx)
 }
 
-func (s *PostgresStore) WithTx(tx pgx.Tx) *db.Queries {
-	return s.queries.WithTx(tx)
+func (s *PostgresStore) WithTx(tx Transaction) db.Querier {
+	return s.queries.WithTx(tx.(pgx.Tx))
 }
 
-func (s *PostgresStore) Queries() *db.Queries {
+func (s *PostgresStore) Queries() db.Querier {
 	return s.queries
 }

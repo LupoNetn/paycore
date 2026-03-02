@@ -6,9 +6,10 @@ INSERT INTO users (
     passwordHash,
     username,
     account_no,
-    nationality
+    nationality,
+    country_code
 ) VALUES (
-    $1, $2, $3, $4, $5, $6, $7
+    $1, $2, $3, $4, $5, $6, $7, $8
 )
 RETURNING *;
 
@@ -34,6 +35,7 @@ SET
     username = COALESCE(sqlc.narg('username'), username),
     account_no = COALESCE(sqlc.narg('account_no'), account_no),
     nationality = COALESCE(sqlc.narg('nationality'), nationality),
+    country_code = COALESCE(sqlc.narg('country_code'), country_code),
     updated_at = NOW()
 WHERE id = sqlc.arg('id')
 RETURNING *;

@@ -50,14 +50,14 @@ func main() {
 	queries := db.New(dbConn)
 
 	//postgresStore setup for main app db calls
-	postgresStore := store.NewPostgresStore(dbConn,queries)
+	postgresStore := store.NewPostgresStore(dbConn, queries)
 
 	//setup task client
 	taskClient := tasks.NewTaskClient(cfg.RedisAddr)
 	defer taskClient.Close()
 
 	//register service
-	authSvc := auth.NewService(postgresStore,taskClient,cfg)
+	authSvc := auth.NewService(postgresStore, taskClient, cfg)
 	transferSvc := transfer.NewService(postgresStore)
 	walletSvc := wallet.NewService(postgresStore)
 
@@ -68,8 +68,8 @@ func main() {
 
 	//register routes
 	auth.RegisterRoutes(router, authHandler)
-	transfer.RegisterRoutes(router,transferHandler)
-	wallet.RegisterRoutes(router,walletHandler)
+	transfer.RegisterRoutes(router, transferHandler, cfg.JWTAccessSecret)
+	wallet.RegisterRoutes(router, walletHandler, cfg.JWTAccessSecret)
 
 	slog.Info("Starting server on port: " + cfg.Port)
 

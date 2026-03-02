@@ -18,7 +18,7 @@ import (
 )
 
 type Svc struct {
-	store store.Store
+	store      store.Store
 	cfg        *config.Config
 	taskClient *asynq.Client
 }
@@ -62,6 +62,7 @@ func (s *Svc) SignUp(ctx context.Context, req SignUpRequest) (UserResponse, erro
 			Username:     username,
 			AccountNo:    accountNo,
 			Nationality:  req.Nationality,
+			CountryCode:  req.CountryCode,
 		}
 
 		tx, err := s.store.Begin(ctx)

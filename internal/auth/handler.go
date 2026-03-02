@@ -75,8 +75,8 @@ func (h *Handler) Refresh(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"message":      "new tokens generated successfully",
-		"accessToken":  newTokens.AccessToken,
-		"refreshToken": newTokens.RefreshToken,
+		"message":       "new tokens generated successfully",
+		"access_token":  newTokens.AccessToken,
+		"refresh_token": newTokens.RefreshToken,
 	})
 }

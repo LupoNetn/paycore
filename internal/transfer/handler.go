@@ -39,7 +39,10 @@ func (h *Handler) HandleCreateTransaction(c *gin.Context) {
 	  return
    }
 
-   c.JSON(http.StatusOK, transaction)
+   c.JSON(http.StatusOK, gin.H{
+      "message": "transaction created successfully",
+      "data":    transaction,
+   })
 }
 
 func (h *Handler) HandleGetTransactionByID(c *gin.Context) {

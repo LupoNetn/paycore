@@ -11,6 +11,7 @@ type SignUpRequest struct {
 	Email       string `json:"email" binding:"required,email"`
 	Password    string `json:"password" binding:"required,min=8"`
 	Nationality string `json:"nationality" binding:"required"`
+	CountryCode string `json:"country_code" binding:"required"`
 }
 
 type LoginRequest struct {

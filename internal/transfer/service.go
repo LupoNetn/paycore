@@ -87,16 +87,26 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 			return db.Transaction{}, errors.New("Insufficient funds")
 		}
 
+		if senderBalanceDecimal.LessThan(decimal.Zero) {
+			slog.Error("sender wallet has negative balance, fix up", "error", err)
+			return db.Transaction{}, errors.New("sender wallet has negative balance, fix up")
+		}
+
+		if reqAmountDecimal.LessThanOrEqual(decimal.Zero) {
+			slog.Error("transfer amount must be greater than zero", "error", err)
+			return db.Transaction{}, errors.New("transfer amount must be greater than zero")
+		}
+
 		//check for same wallet transfer
 		if senderWallet.ID == receiverWallet.ID {
-			slog.Error("sender and receiver wallet cannot be the same", "error", err)
-			return db.Transaction{}, err
+			slog.Error("sender and receiver wallet cannot be the same",)
+			return db.Transaction{}, errors.New("sender wallet and receiver wallet cannot be the same")
 		}
 
 		//check for currency match
 		if senderWallet.Currency != receiverWallet.Currency {
 			slog.Error("sender and receiver wallet must have the same currency", "error", err)
-			return db.Transaction{}, err
+			return db.Transaction{}, errors.New("wallet currencies must be the same")
 		}
 
 		//create transaction record with pending status
