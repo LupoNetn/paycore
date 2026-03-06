@@ -24,7 +24,7 @@ func TestCreateTransaction(t *testing.T) {
 	senderWallet := db.GetWalletsAndLockByWalletIdsRow{
 		ID:       senderWalletID,
 		UserID:   pgtype.UUID{Bytes: userID, Valid: true},
-		Balance:  pgtype.Numeric{Int: uuid.New().IP().To4()[0:0], Exp: 0}, // Placeholder for numeric
+		Balance:  pgtype.Numeric{},
 		Currency: "NGN",
 	}
 	_ = senderWallet.Balance.Scan("100")
