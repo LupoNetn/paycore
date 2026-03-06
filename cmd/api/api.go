@@ -15,7 +15,7 @@ func (app *Application) SetupRouter() *gin.Engine {
 	slog.Info("Initializing CORS middleware for development")
 	// CORS middleware — allow frontend origins
 	router.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000"},
+		AllowOrigins:     []string{"http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Requested-With", "Idempotency-Key"},
 		ExposeHeaders:    []string{"Content-Length", "Content-Type"},
@@ -23,7 +23,15 @@ func (app *Application) SetupRouter() *gin.Engine {
 		MaxAge:           12 * time.Hour,
 	}))
 
-	router.GET("/health", func(c *gin.Context) {
+	router.GET("/healthz", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	router.GET("/readyz", func(c *gin.Context) {
+		if err := app.db.Ping(c.Request.Context()); err != nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"status": "error", "message": "database unavailable"})
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 

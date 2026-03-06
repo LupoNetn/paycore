@@ -56,7 +56,7 @@ func (q *Queries) CreateTransaction(ctx context.Context, arg CreateTransactionPa
 }
 
 const getPendingTransactionsByWalletId = `-- name: GetPendingTransactionsByWalletId :many
-SELECT id, sender_wallet_id, receiver_wallet_id, transaction_type, amount, description, status, currency, idempotency_key, created_at, updated_at FROM transactions WHERE (sender_wallet_id = $1 OR recipient_wallet_id = $1) AND status = 'pending' ORDER BY created_at DESC
+SELECT id, sender_wallet_id, receiver_wallet_id, transaction_type, amount, description, status, currency, idempotency_key, created_at, updated_at FROM transactions WHERE (sender_wallet_id = $1 OR receiver_wallet_id = $1) AND status = 'pending' ORDER BY created_at DESC
 `
 
 func (q *Queries) GetPendingTransactionsByWalletId(ctx context.Context, senderWalletID pgtype.UUID) ([]Transaction, error) {
@@ -138,7 +138,7 @@ func (q *Queries) GetTransactionByIdempotencyKey(ctx context.Context, idempotenc
 }
 
 const getTransactionsByWalletId = `-- name: GetTransactionsByWalletId :many
-SELECT id, sender_wallet_id, receiver_wallet_id, transaction_type, amount, description, status, currency, idempotency_key, created_at, updated_at FROM transactions WHERE sender_wallet_id = $1 OR recipient_wallet_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
+SELECT id, sender_wallet_id, receiver_wallet_id, transaction_type, amount, description, status, currency, idempotency_key, created_at, updated_at FROM transactions WHERE sender_wallet_id = $1 OR receiver_wallet_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3
 `
 
 type GetTransactionsByWalletIdParams struct {

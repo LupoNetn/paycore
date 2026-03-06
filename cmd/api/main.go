@@ -1,8 +1,14 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/luponetn/paycore/internal/auth"
@@ -71,10 +77,30 @@ func main() {
 	transfer.RegisterRoutes(router, transferHandler, cfg.JWTAccessSecret)
 	wallet.RegisterRoutes(router, walletHandler, cfg.JWTAccessSecret)
 
-	slog.Info("Starting server on port: " + cfg.Port)
-
-	if err := router.Run(":" + cfg.Port); err != nil {
-		slog.Error("The server was unable to start up", "error", err)
-		os.Exit(1)
+	srv := &http.Server{
+		Addr:    ":" + cfg.Port,
+		Handler: router,
 	}
+
+	go func() {
+		slog.Info("Starting server on port: " + cfg.Port)
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			slog.Error("failed to listen and serve", "error", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	slog.Info("Shutting down server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := srv.Shutdown(ctx); err != nil {
+		slog.Error("Server forced to shutdown:", "error", err)
+	}
+
+	slog.Info("Server exiting")
 }

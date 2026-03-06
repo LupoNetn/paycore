@@ -43,3 +43,6 @@ RETURNING *;
 -- name: DeleteUser :exec
 DELETE FROM users
 WHERE id = $1;
+-- name: GetUserByAccountNo :one
+SELECT * FROM users
+WHERE account_no = $1 LIMIT 1;

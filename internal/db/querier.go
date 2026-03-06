@@ -23,11 +23,14 @@ type Querier interface {
 	GetTransactionByIdempotencyKey(ctx context.Context, idempotencyKey string) (Transaction, error)
 	GetTransactionsByWalletId(ctx context.Context, arg GetTransactionsByWalletIdParams) ([]Transaction, error)
 	GetUserBalance(ctx context.Context, walletID uuid.UUID) (interface{}, error)
+	GetUserByAccountNo(ctx context.Context, accountNo string) (User, error)
 	GetUserByEmail(ctx context.Context, email string) (User, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByUsername(ctx context.Context, username string) (User, error)
+	GetWalletByAccountNo(ctx context.Context, accountNo string) (GetWalletByAccountNoRow, error)
 	GetWalletById(ctx context.Context, id uuid.UUID) (Wallet, error)
 	GetWalletsAndLockByWalletIds(ctx context.Context, arg GetWalletsAndLockByWalletIdsParams) ([]GetWalletsAndLockByWalletIdsRow, error)
+	GetWalletsByUserId(ctx context.Context, userID pgtype.UUID) ([]Wallet, error)
 	UpdateTransactionStatus(ctx context.Context, arg UpdateTransactionStatusParams) error
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (User, error)
 	UpdateWalletBalance(ctx context.Context, arg UpdateWalletBalanceParams) error

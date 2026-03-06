@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/luponetn/paycore/internal/db"
 	"github.com/luponetn/paycore/internal/store"
 	"github.com/luponetn/paycore/pkg/utils"
@@ -16,7 +17,7 @@ import (
 )
 
 type Service interface {
-	CreateTransaction(ctx context.Context, req CreateTransactionRequest) (db.Transaction, error)
+	CreateTransaction(ctx context.Context, userID uuid.UUID, req CreateTransactionRequest) (db.Transaction, error)
 	GetTransactionByID(ctx context.Context, transactionID uuid.UUID) (db.Transaction, error)
 }
 
@@ -28,23 +29,58 @@ func NewService(store store.Store) Service {
 	return &Svc{store: store}
 }
 
-// implement Services
-
-// 1. CreateTransaction - creates a transaction record with pending status, creates double ledger entries for both sender and receiver, updates wallet balance for both sender and receiver, and finally updates transaction record with completed status. All of these operations are done in a single db transaction to ensure atomicity. Also implements idempotency key to prevent duplicate transactions.
-func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionRequest) (db.Transaction, error) {
-	// Single timeout for entire operation (all retries + backoff + actual work)
+// CreateTransaction - creates an atomic wallet-to-wallet transfer
+func (s *Svc) CreateTransaction(ctx context.Context, userID uuid.UUID, req CreateTransactionRequest) (db.Transaction, error) {
+	// Single timeout for entire operation
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
+
+	// Parse amounts and IDs outside the retry loop if possible,
+	// but here we deal with strings so it's safer inside or just before.
+	amountDecimal, err := decimal.NewFromString(req.Amount)
+	if err != nil {
+		return db.Transaction{}, ErrInvalidAmount
+	}
+
+	if amountDecimal.LessThanOrEqual(decimal.Zero) {
+		return db.Transaction{}, ErrInvalidAmount
+	}
+
+	senderID, err := uuid.Parse(req.SenderWalletID)
+	if err != nil {
+		return db.Transaction{}, errors.New("invalid sender wallet id")
+	}
+
+	var receiverID uuid.UUID
+	if req.ReceiverAccountNo != "" {
+		// Resolve wallet ID from account number
+		w, err := s.store.Queries().GetWalletByAccountNo(ctx, req.ReceiverAccountNo)
+		if err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return db.Transaction{}, errors.New("receiver account not found")
+			}
+			return db.Transaction{}, err
+		}
+		receiverID = w.WalletID
+	} else if req.ReceiverWalletID != "" {
+		receiverID, err = uuid.Parse(req.ReceiverWalletID)
+		if err != nil {
+			return db.Transaction{}, errors.New("invalid receiver wallet id")
+		}
+	} else {
+		return db.Transaction{}, errors.New("either receiver wallet id or account number is required")
+	}
+
+	if senderID == receiverID {
+		return db.Transaction{}, ErrSameWallet
+	}
 
 	return utils.Retry(3, 100, func() (db.Transaction, error) {
 		tx, err := s.store.Begin(ctx)
 		if err != nil {
-			slog.Error("could not initialized db transaction for create transaction service", "error", err)
 			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		// Ensure rollback on error/panic. Ignore ErrTxClosed which is returned when
-		// the tx has already been committed.
 		defer func() {
 			if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
 				slog.Error("failed to rollback tx", "error", rbErr)
@@ -53,24 +89,23 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 
 		qtx := s.store.WithTx(tx)
 
-		// Note: idempotency is handled atomically by relying on a DB unique
-		// constraint on `idempotency_key` and handling duplicate-key errors below.
-
-		//check which user has the smallest id and lock first
+		// 1. Fetch wallets and lock in deterministic order
 		fetchWalletsParams := db.GetWalletsAndLockByWalletIdsParams{
-			ID:   req.SenderWalletID.Bytes,
-			ID_2: req.ReceiverWalletID.Bytes,
+			ID:  senderID,
+			ID2: receiverID,
 		}
-		var senderWallet, receiverWallet db.GetWalletsAndLockByWalletIdsRow
 
 		wallets, err := qtx.GetWalletsAndLockByWalletIds(ctx, fetchWalletsParams)
 		if err != nil {
-			slog.Error("error fetching wallets and acquiring lock for transfer transaction", "error", err)
 			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		//get who owns the wallet
-		if wallets[0].ID == req.SenderWalletID.Bytes {
+		if len(wallets) != 2 {
+			return db.Transaction{}, ErrWalletNotFound
+		}
+
+		var senderWallet, receiverWallet db.GetWalletsAndLockByWalletIdsRow
+		if wallets[0].ID == senderID {
 			senderWallet = wallets[0]
 			receiverWallet = wallets[1]
 		} else {
@@ -78,146 +113,99 @@ func (s *Svc) CreateTransaction(ctx context.Context, req CreateTransactionReques
 			receiverWallet = wallets[0]
 		}
 
-		//convert pgType.Numeric struct to decimal for comparison
-		senderBalanceDecimal := decimal.NewFromBigInt(senderWallet.Balance.Int, senderWallet.Balance.Exp)
-		reqAmountDecimal := decimal.NewFromBigInt(req.Amount.Int, req.Amount.Exp)
-
-		if senderBalanceDecimal.LessThan(reqAmountDecimal) {
-			slog.Error("insufficient balance, fix up", "error", err)
-			return db.Transaction{}, errors.New("Insufficient funds")
+		// 2. Security Check: Authenticated user must own the sender wallet
+		if !senderWallet.UserID.Valid || uuid.UUID(senderWallet.UserID.Bytes) != userID {
+			return db.Transaction{}, ErrUnauthorizedWallet
 		}
 
-		if senderBalanceDecimal.LessThan(decimal.Zero) {
-			slog.Error("sender wallet has negative balance, fix up", "error", err)
-			return db.Transaction{}, errors.New("sender wallet has negative balance, fix up")
+		// 3. Business Validation
+		senderBalance := decimal.NewFromBigInt(senderWallet.Balance.Int, senderWallet.Balance.Exp)
+		if senderBalance.LessThan(amountDecimal) {
+			return db.Transaction{}, ErrInsufficientFunds
 		}
 
-		if reqAmountDecimal.LessThanOrEqual(decimal.Zero) {
-			slog.Error("transfer amount must be greater than zero", "error", err)
-			return db.Transaction{}, errors.New("transfer amount must be greater than zero")
+		if senderWallet.Currency != req.Currency || receiverWallet.Currency != req.Currency {
+			return db.Transaction{}, ErrCurrencyMismatch
 		}
 
-		//check for same wallet transfer
-		if senderWallet.ID == receiverWallet.ID {
-			slog.Error("sender and receiver wallet cannot be the same",)
-			return db.Transaction{}, errors.New("sender wallet and receiver wallet cannot be the same")
-		}
-
-		//check for currency match
-		if senderWallet.Currency != receiverWallet.Currency {
-			slog.Error("sender and receiver wallet must have the same currency", "error", err)
-			return db.Transaction{}, errors.New("wallet currencies must be the same")
-		}
-
-		//create transaction record with pending status
+		// 4. Create Transaction record (Idempotency)
 		transactionParams := db.CreateTransactionParams{
-			SenderWalletID:   req.SenderWalletID,
-			ReceiverWalletID: req.ReceiverWalletID,
-			TransactionType:  req.TransactionType,
-			Amount:           req.Amount,
-			Description:      req.Description,
-			Status:           "pending",
-			Currency:         senderWallet.Currency,
+			SenderWalletID:   pgtype.UUID{Bytes: senderID, Valid: true},
+			ReceiverWalletID: pgtype.UUID{Bytes: receiverID, Valid: true},
+			TransactionType:  db.TransactionTypeEnum(req.TransactionType),
+			Amount:           utils.DecimalToNumeric(amountDecimal),
+			Description:      pgtype.Text{String: req.Description, Valid: req.Description != ""},
+			Status:           db.TransactionStatusEnumPending,
+			Currency:         req.Currency,
 			IdempotencyKey:   req.IdempotencyKey,
 		}
 
 		createdTransaction, transactionErr := qtx.CreateTransaction(ctx, transactionParams)
 		if transactionErr != nil {
-			// If a concurrent request already created a transaction with this
-			// idempotency key, the DB should raise unique_violation (23505).
-			// Fetch and return the existing transaction instead of failing.
 			if pgErr, ok := transactionErr.(*pgconn.PgError); ok && pgErr.Code == "23505" {
 				existingTx, getErr := qtx.GetTransactionByIdempotencyKey(ctx, req.IdempotencyKey)
 				if getErr != nil {
-					slog.Error("failed to fetch existing transaction after unique violation", "error", getErr)
 					return db.Transaction{}, &utils.RetryableError{Err: getErr}
 				}
 				return existingTx, nil
 			}
-
-			slog.Error("error occurred when trying to create transaction record with pending status", "error", transactionErr)
 			return db.Transaction{}, &utils.RetryableError{Err: transactionErr}
 		}
 
-		//get sender and receiver balance before transfer for ledger entry
-		senderBalanceBefore := senderWallet.Balance
-		receiverBalanceBefore := receiverWallet.Balance
+		// 5. Update Balances and Ledger
+		newSenderBalance := senderBalance.Sub(amountDecimal)
+		receiverBalance := decimal.NewFromBigInt(receiverWallet.Balance.Int, receiverWallet.Balance.Exp)
+		newReceiverBalance := receiverBalance.Add(amountDecimal)
 
-		//get sender and receiver balance after transfer for ledger entry
-		receiverBalanceDecimal := decimal.NewFromBigInt(receiverWallet.Balance.Int, receiverWallet.Balance.Exp)
-		amountDecimal := decimal.NewFromBigInt(req.Amount.Int, req.Amount.Exp)
-
-		newSenderBalance := senderBalanceDecimal.Sub(amountDecimal)
-		newReceiverBalance := receiverBalanceDecimal.Add(amountDecimal)
-
-		//create double-entry ledger for both debit and credit
-		//1. create debit ledger entry for sender
-		debitLedgerParams := db.CreateLedgerParams{
+		// Create Ledger Entries
+		if _, err := qtx.CreateLedger(ctx, db.CreateLedgerParams{
 			WalletID:      senderWallet.ID,
 			TransactionID: createdTransaction.ID,
-			Amount:        req.Amount,
+			Amount:        utils.DecimalToNumeric(amountDecimal),
 			EntryType:     db.LedgerEntryTypeDebit,
 			Currency:      senderWallet.Currency,
-			BalanceBefore: senderBalanceBefore,
+			BalanceBefore: senderWallet.Balance,
 			BalanceAfter:  utils.DecimalToNumeric(newSenderBalance),
+		}); err != nil {
+			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		//2. create credit ledger entry for receiver
-		creditLedgerParams := db.CreateLedgerParams{
+		if _, err := qtx.CreateLedger(ctx, db.CreateLedgerParams{
 			WalletID:      receiverWallet.ID,
 			TransactionID: createdTransaction.ID,
-			Amount:        req.Amount,
+			Amount:        utils.DecimalToNumeric(amountDecimal),
 			EntryType:     db.LedgerEntryTypeCredit,
 			Currency:      receiverWallet.Currency,
-			BalanceBefore: receiverBalanceBefore,
+			BalanceBefore: receiverWallet.Balance,
 			BalanceAfter:  utils.DecimalToNumeric(newReceiverBalance),
-		}
-
-		if _, err := qtx.CreateLedger(ctx, debitLedgerParams); err != nil {
-			slog.Error("error occurred when trying to create debit ledger entry", "error", err)
+		}); err != nil {
 			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		if _, err := qtx.CreateLedger(ctx, creditLedgerParams); err != nil {
-			slog.Error("error occurred when trying to create credit ledger entry", "error", err)
-			return db.Transaction{}, &utils.RetryableError{Err: err}
-		}
-
-		//update wallet balance for sender and receiver
-		//1. update sender wallet balance
-		UpdateSenderBalanceErr := qtx.UpdateWalletBalance(ctx, db.UpdateWalletBalanceParams{
+		// Update Wallet Balances
+		if err := qtx.UpdateWalletBalance(ctx, db.UpdateWalletBalanceParams{
 			Balance: utils.DecimalToNumeric(newSenderBalance),
 			ID:      senderWallet.ID,
-		})
-
-		if UpdateSenderBalanceErr != nil {
-			slog.Error("error occurred when trying to update sender wallet balance", "error", UpdateSenderBalanceErr)
-			return db.Transaction{}, &utils.RetryableError{Err: UpdateSenderBalanceErr}
+		}); err != nil {
+			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		//2. update receiver wallet balance
-		UpdateReceiverBalanceErr := qtx.UpdateWalletBalance(ctx, db.UpdateWalletBalanceParams{
+		if err := qtx.UpdateWalletBalance(ctx, db.UpdateWalletBalanceParams{
 			Balance: utils.DecimalToNumeric(newReceiverBalance),
 			ID:      receiverWallet.ID,
-		})
-
-		if UpdateReceiverBalanceErr != nil {
-			slog.Error("error occurred when trying to update receiver wallet balance", "error", UpdateReceiverBalanceErr)
-			return db.Transaction{}, &utils.RetryableError{Err: UpdateReceiverBalanceErr}
+		}); err != nil {
+			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
-		//update transaction record with success status
-		updateTransactionStatusErr := qtx.UpdateTransactionStatus(ctx, db.UpdateTransactionStatusParams{
+		// 6. Complete Transaction
+		if err := qtx.UpdateTransactionStatus(ctx, db.UpdateTransactionStatusParams{
 			Status: db.TransactionStatusEnumCompleted,
 			ID:     createdTransaction.ID,
-		})
-		if updateTransactionStatusErr != nil {
-			slog.Error("error occurred when trying to update transaction status to success", "error", updateTransactionStatusErr)
-			return db.Transaction{}, &utils.RetryableError{Err: updateTransactionStatusErr}
+		}); err != nil {
+			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 
 		if err := tx.Commit(ctx); err != nil {
-			slog.Error("error occurred when trying to commit db transaction", "error", err)
 			return db.Transaction{}, &utils.RetryableError{Err: err}
 		}
 

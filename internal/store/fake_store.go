@@ -58,8 +58,8 @@ func (f *FakeStore) GetWalletsAndLockByWalletIds(ctx context.Context, params db.
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	sender, ok1 := f.wallets[uuid.UUID(params.ID)]
-	receiver, ok2 := f.wallets[uuid.UUID(params.ID_2)]
+	sender, ok1 := f.wallets[params.ID]
+	receiver, ok2 := f.wallets[params.ID2]
 
 	if !ok1 || !ok2 {
 		return nil, errors.New("wallet not found")
@@ -164,6 +164,26 @@ func (f *FakeStore) GetTransactionByIdempotencyKey(ctx context.Context, key stri
 	return db.Transaction{}, errors.New("transaction not found")
 }
 
+func (f *FakeStore) GetWalletsByUserId(ctx context.Context, userID pgtype.UUID) ([]db.Wallet, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	var result []db.Wallet
+	for _, w := range f.wallets {
+		if w.UserID == userID {
+			// Map GetWalletsAndLockByWalletIdsRow to db.Wallet
+			result = append(result, db.Wallet{
+				ID:         w.ID,
+				UserID:     w.UserID,
+				Balance:    w.Balance,
+				Currency:   w.Currency,
+				WalletType: db.WalletTypeEnumSavings, // Default for fake
+			})
+		}
+	}
+	return result, nil
+}
+
 func (f *FakeStore) CreateOTP(ctx context.Context, arg db.CreateOTPParams) (db.Otp, error) {
 	return db.Otp{}, errors.New("not implemented")
 }
@@ -210,6 +230,14 @@ func (f *FakeStore) GetWalletById(ctx context.Context, id uuid.UUID) (db.Wallet,
 
 func (f *FakeStore) UpdateUser(ctx context.Context, arg db.UpdateUserParams) (db.User, error) {
 	return db.User{}, errors.New("not implemented")
+}
+
+func (f *FakeStore) GetUserByAccountNo(ctx context.Context, accountNo string) (db.User, error) {
+	return db.User{}, errors.New("not implemented")
+}
+
+func (f *FakeStore) GetWalletByAccountNo(ctx context.Context, accountNo string) (db.GetWalletByAccountNoRow, error) {
+	return db.GetWalletByAccountNoRow{}, errors.New("not implemented")
 }
 
 // helper: populate fake wallets for testing

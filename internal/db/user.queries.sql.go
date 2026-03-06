@@ -77,6 +77,30 @@ func (q *Queries) DeleteUser(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
+const getUserByAccountNo = `-- name: GetUserByAccountNo :one
+SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code FROM users
+WHERE account_no = $1 LIMIT 1
+`
+
+func (q *Queries) GetUserByAccountNo(ctx context.Context, accountNo string) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByAccountNo, accountNo)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.FullName,
+		&i.PhoneNumber,
+		&i.Email,
+		&i.Passwordhash,
+		&i.Username,
+		&i.AccountNo,
+		&i.Nationality,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.CountryCode,
+	)
+	return i, err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
 SELECT id, full_name, phone_number, email, passwordhash, username, account_no, nationality, created_at, updated_at, country_code FROM users
 WHERE email = $1 LIMIT 1
